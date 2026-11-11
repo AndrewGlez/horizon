@@ -59,6 +59,8 @@ bitflags::bitflags! {
         const SHADER_BARYCENTRICS = 1 << 26;
         /// Primitive index builtin
         const PRIMITIVE_INDEX = 1 << 27;
+        /// `floatBitsToUint` and its kin: core in GLSL 330, `GL_ARB_shader_bit_encoding` before
+        const SHADER_BIT_ENCODING = 1 << 28;
     }
 }
 
@@ -165,6 +167,12 @@ impl FeaturesManager {
                 out,
                 "#extension GL_ARB_shader_storage_buffer_object : require"
             )?;
+        }
+
+        if self.0.contains(Features::SHADER_BIT_ENCODING) && options.version < Version::Desktop(330)
+        {
+            // https://registry.khronos.org/OpenGL/extensions/ARB/ARB_shader_bit_encoding.txt
+            writeln!(out, "#extension GL_ARB_shader_bit_encoding : require")?;
         }
 
         if self.0.contains(Features::DOUBLE_TYPE) && options.version < Version::Desktop(400) {
@@ -585,6 +593,13 @@ impl<W> Writer<'_, W> {
                         if ext_used {
                             features.request(Features::TEXTURE_SHADOW_LOD);
                         }
+                    }
+                }
+                Expression::As { expr, kind, convert: None } => {
+                    let source = info[expr].ty.inner_with(&module.types).scalar_kind();
+                    let float = |k| k == Some(crate::ScalarKind::Float);
+                    if float(source) != float(Some(kind)) {
+                        features.request(Features::SHADER_BIT_ENCODING)
                     }
                 }
                 Expression::SubgroupBallotResult |

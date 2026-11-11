@@ -263,11 +263,24 @@ impl super::Adapter {
         }
 
         if let Some(full_ver) = full_ver {
-            if full_ver < (3, 3) {
+            // GL 3.1/3.2 drivers (Intel Sandy Bridge on Windows) work when they expose
+            // the GL 3.2/3.3 functionality the backend calls through extensions.
+            let legacy_extensions = [
+                ("GL_ARB_sampler_objects", (3, 3)),
+                ("GL_ARB_instanced_arrays", (3, 3)),
+                ("GL_ARB_sync", (3, 2)),
+                // naga's bitcasts on GLSL 1.40.
+                ("GL_ARB_shader_bit_encoding", (3, 3)),
+            ];
+            let missing = legacy_extensions
+                .iter()
+                .any(|&(ext, core)| full_ver < core && !extensions.contains(ext));
+            if full_ver < (3, 1) || missing {
                 log::warn!(
-                    "Returned GL context is {}.{}, when 3.3+ is needed",
+                    "Returned GL context is {}.{}, when 3.3+ (or 3.1 with {}) is needed",
                     full_ver.0,
-                    full_ver.1
+                    full_ver.1,
+                    legacy_extensions.map(|(ext, _)| ext).join(", ")
                 );
                 return None;
             }
@@ -399,10 +412,15 @@ impl super::Adapter {
             max_storage_block_size != 0,
         );
         downlevel_flags.set(wgt::DownlevelFlags::INDIRECT_EXECUTION, indirect_execution);
-        downlevel_flags.set(wgt::DownlevelFlags::BASE_VERTEX, supported((3, 2), (3, 2)));
+        downlevel_flags.set(
+            wgt::DownlevelFlags::BASE_VERTEX,
+            supported((3, 2), (3, 2)) || extensions.contains("GL_ARB_draw_elements_base_vertex"),
+        );
         downlevel_flags.set(
             wgt::DownlevelFlags::INDEPENDENT_BLEND,
-            supported((3, 2), (4, 0)) || extensions.contains("GL_EXT_draw_buffers_indexed"),
+            supported((3, 2), (4, 0))
+                || extensions.contains("GL_EXT_draw_buffers_indexed")
+                || extensions.contains("GL_ARB_draw_buffers_blend"),
         );
         downlevel_flags.set(
             wgt::DownlevelFlags::VERTEX_STORAGE,

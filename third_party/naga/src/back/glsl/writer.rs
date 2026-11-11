@@ -135,8 +135,12 @@ impl<'a, W: Write> Writer<'a, W> {
 
         let es = self.options.version.is_es();
 
-        // Write the version (It must be the first thing or it isn't a valid glsl output)
-        writeln!(self.out, "#version {}", self.options.version)?;
+        // Write the version (It must be the first thing or it isn't a valid glsl output).
+        // Profiles arrived in GLSL 150: 140 compilers reject `#version 140 core`.
+        match self.options.version {
+            Version::Desktop(v) if v < 150 => writeln!(self.out, "#version {v}")?,
+            version => writeln!(self.out, "#version {version}")?,
+        }
         // Write all the needed extensions
         //
         // This used to be the last thing being written as it allowed to search for features while

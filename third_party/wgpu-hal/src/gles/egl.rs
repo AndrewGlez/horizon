@@ -590,12 +590,19 @@ impl Inner {
             };
 
             let result = if supports_opengl {
-                create_context(khronos_egl::OPENGL_API, &gl_context_attributes).or_else(
-                    |gl_error| {
+                create_context(khronos_egl::OPENGL_API, &gl_context_attributes)
+                    .or_else(|gl_error| {
+                        // GL 3.1 drivers, which `Adapter::expose` takes with the extensions
+                        // standing in for GL 3.2/3.3.
+                        log::debug!("Failed to create desktop OpenGL 3.3 context: {gl_error}, trying OpenGL 3.1");
+                        let mut attributes = gl_context_attributes.clone();
+                        attributes[3] = 1;
+                        create_context(khronos_egl::OPENGL_API, &attributes)
+                    })
+                    .or_else(|gl_error| {
                         log::debug!("Failed to create desktop OpenGL context: {gl_error}, falling back to OpenGL ES");
                         create_context(khronos_egl::OPENGL_ES_API, &gles_context_attributes)
-                    },
-                )
+                    })
             } else {
                 create_context(khronos_egl::OPENGL_ES_API, &gles_context_attributes)
             };

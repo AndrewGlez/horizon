@@ -1,0 +1,44 @@
+name: hd2000 build
+# The Windows game with the OpenGL 3.1 path (third_party/wgpu-hal, third_party/naga) for Intel HD
+# Graphics 2000/3000, built as game-build.yml builds the official Windows x64 game, and uploaded as an
+# artifact for `horizon-launcher import-build`.
+on:
+  push:
+    branches: [hd2000-gl31]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    env:
+      # The C runtime linked in, so the game runs without the Visual C++ redistributable.
+      RUSTFLAGS: -C target-feature=+crt-static
+      HORIZON_VERSION: hd2000-${{ github.sha }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable, 2026-11
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          shared-key: hd2000-windows
+      - name: Build the official game
+        run: cargo build --release --locked -p horizon-official --bin horizon-official
+      - name: The official game, under the name the launcher imports
+        run: |
+          mkdir -p out
+          cp target/release/horizon-official.exe out/horizon-client.exe
+      - name: Only system libraries
+        run: python tools/check_imports.py out/horizon-client.exe
+      - uses: actions/upload-artifact@v7
+        with:
+          name: horizon-client-hd2000-windows-x64
+          path: out/horizon-client.exe
+          if-no-files-found: error

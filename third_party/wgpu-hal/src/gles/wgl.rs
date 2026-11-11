@@ -191,6 +191,20 @@ pub struct Instance {
 static_assertions::assert_impl_all!(Instance: Send, Sync);
 
 fn load_gl_func(name: &str, module: Option<Foundation::HMODULE>) -> *const c_void {
+    let ptr = load_gl_func_exact(name, module);
+    if !ptr.is_null() || !name.starts_with("gl") {
+        return ptr;
+    }
+    // GL 3.1 drivers export GL 3.2/3.3/4.0 entry points the backend calls under the
+    // extension's name (`glVertexAttribDivisorARB`, `glBlendFuncSeparateiARB`).
+    ["ARB", "EXT"]
+        .iter()
+        .map(|suffix| load_gl_func_exact(&format!("{name}{suffix}"), module))
+        .find(|ptr| !ptr.is_null())
+        .unwrap_or(ptr)
+}
+
+fn load_gl_func_exact(name: &str, module: Option<Foundation::HMODULE>) -> *const c_void {
     let addr = CString::new(name.as_bytes()).unwrap();
     let mut ptr = unsafe { OpenGL::wglGetProcAddress(PCSTR(addr.as_ptr().cast())) };
     if ptr.is_none() {
