@@ -50,9 +50,9 @@ developers, with upstream fixes applied
 the context's sampled textures and samplers per shader stage (usually 32 on desktop GL,
 where WebGL2's minimum 16 was reported before), so a pipeline layout the driver accepts is
 not refused. It also opens OpenGL 3.1 contexts that expose `GL_ARB_sampler_objects`,
-`GL_ARB_instanced_arrays`, `GL_ARB_sync` and `GL_ARB_shader_bit_encoding` (Intel HD Graphics
-2000/3000 on Windows), loading the entry points those extensions name with their `ARB`/`EXT`
-suffix, and EGL tries a 3.1 context when 3.3 is refused. It is licensed under MIT or
+`GL_ARB_instanced_arrays` and `GL_ARB_sync` (Intel HD Graphics 2000/3000 on Windows), loading
+the entry points those extensions name with their `ARB`/`EXT` suffix, and EGL tries a 3.1
+context when 3.3 is refused. It is licensed under MIT or
 Apache-2.0; both licenses are in that folder (`LICENSE.MIT`, `LICENSE.APACHE`).
 
 ## naga
@@ -62,7 +62,8 @@ fixes to its GLSL frontend that shader packs need, each applied in the commit th
 are in that folder (`LICENSE.MIT`, `LICENSE.APACHE`).
 
 Its GLSL backend writes `#version 140` without a profile (profiles arrived in GLSL 150), and
-enables `GL_ARB_shader_bit_encoding` for bitcasts below GLSL 330.
+below GLSL 330 writes bitcasts as exact arithmetic (`BIT_ENCODING_POLYFILL`): Intel's Sandy
+Bridge driver lists `GL_ARB_shader_bit_encoding` but its GLSL 1.40 compiler refuses it.
 
 The GLSL frontend also resets the common type for each comma-separated declarator so one
 variable's array specifier does not change later variables.

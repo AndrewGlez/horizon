@@ -87,6 +87,71 @@ const CLAMPED_LOD_SUFFIX: &str = "_clamped_lod";
 
 pub(crate) const MODF_FUNCTION: &str = "naga_modf";
 pub(crate) const FREXP_FUNCTION: &str = "naga_frexp";
+pub(crate) const BITS_TO_FLOAT_FUNCTION: &str = "naga_uintBitsToFloat";
+pub(crate) const INT_BITS_TO_FLOAT_FUNCTION: &str = "naga_intBitsToFloat";
+pub(crate) const FLOAT_BITS_TO_UINT_FUNCTION: &str = "naga_floatBitsToUint";
+pub(crate) const FLOAT_BITS_TO_INT_FUNCTION: &str = "naga_floatBitsToInt";
+pub(crate) const POW2_FUNCTION: &str = "naga_pow2";
+
+/// Bitcasts for GLSL below 330, which has neither them nor, on Intel's Sandy Bridge driver,
+/// a working `GL_ARB_shader_bit_encoding`. Exact for every finite value: scaling by powers of
+/// two built from normal powers of two loses no bit. Denormals follow the GPU (usually flushed);
+/// -0.0 encodes as +0.0; NaN encodes as the quiet NaN 0x7fc00000.
+pub(crate) const BIT_ENCODING_POLYFILL: &str = "\
+float naga_pow2(int k) {
+    float s = k < 0 ? 0.5 : 2.0;
+    int a = k < 0 ? -k : k;
+    float p = 1.0;
+    for (int i = 0; i < 7; i++) {
+        if ((a & (1 << i)) != 0) { p *= s; }
+        if (i < 6) { s *= s; }
+    }
+    return p;
+}
+float naga_uintBitsToFloat(uint u) {
+    uint e = (u >> 23u) & 255u;
+    float m = float(u & 8388607u) * (1.0 / 8388608.0);
+    float v;
+    if (e == 255u) {
+        v = naga_pow2(127) * 2.0;
+        if (m != 0.0) { v = sqrt(-m); }
+    } else if (e == 0u) {
+        v = m * naga_pow2(-126);
+    } else {
+        v = (1.0 + m) * naga_pow2(int(e) - 127);
+    }
+    return (u >> 31u) != 0u ? -v : v;
+}
+uint naga_floatBitsToUint(float f) {
+    if (isnan(f)) { return 2143289344u; }
+    uint s = f < 0.0 ? 2147483648u : 0u;
+    if (isinf(f)) { return s | 2139095040u; }
+    float a = abs(f);
+    if (a == 0.0) { return s; }
+    int e = clamp(int(floor(log2(a))), -126, 127);
+    if (e > -126 && a < naga_pow2(e)) { e -= 1; }
+    if (e < 127 && a >= naga_pow2(e + 1)) { e += 1; }
+    if (e == -126 && a < naga_pow2(-126)) {
+        return s | uint(a * naga_pow2(126) * 8388608.0);
+    }
+    float n = a * naga_pow2(-e / 2) * naga_pow2(e / 2 - e);
+    return s | (uint(e + 127) << 23u) | uint((n - 1.0) * 8388608.0);
+}
+float naga_intBitsToFloat(int i) { return naga_uintBitsToFloat(uint(i)); }
+int naga_floatBitsToInt(float f) { return int(naga_floatBitsToUint(f)); }
+vec2 naga_uintBitsToFloat(uvec2 v) { return vec2(naga_uintBitsToFloat(v.x), naga_uintBitsToFloat(v.y)); }
+vec3 naga_uintBitsToFloat(uvec3 v) { return vec3(naga_uintBitsToFloat(v.x), naga_uintBitsToFloat(v.y), naga_uintBitsToFloat(v.z)); }
+vec4 naga_uintBitsToFloat(uvec4 v) { return vec4(naga_uintBitsToFloat(v.x), naga_uintBitsToFloat(v.y), naga_uintBitsToFloat(v.z), naga_uintBitsToFloat(v.w)); }
+vec2 naga_intBitsToFloat(ivec2 v) { return naga_uintBitsToFloat(uvec2(v)); }
+vec3 naga_intBitsToFloat(ivec3 v) { return naga_uintBitsToFloat(uvec3(v)); }
+vec4 naga_intBitsToFloat(ivec4 v) { return naga_uintBitsToFloat(uvec4(v)); }
+uvec2 naga_floatBitsToUint(vec2 v) { return uvec2(naga_floatBitsToUint(v.x), naga_floatBitsToUint(v.y)); }
+uvec3 naga_floatBitsToUint(vec3 v) { return uvec3(naga_floatBitsToUint(v.x), naga_floatBitsToUint(v.y), naga_floatBitsToUint(v.z)); }
+uvec4 naga_floatBitsToUint(vec4 v) { return uvec4(naga_floatBitsToUint(v.x), naga_floatBitsToUint(v.y), naga_floatBitsToUint(v.z), naga_floatBitsToUint(v.w)); }
+ivec2 naga_floatBitsToInt(vec2 v) { return ivec2(naga_floatBitsToUint(v)); }
+ivec3 naga_floatBitsToInt(vec3 v) { return ivec3(naga_floatBitsToUint(v)); }
+ivec4 naga_floatBitsToInt(vec4 v) { return ivec4(naga_floatBitsToUint(v)); }
+";
 
 #[cfg(feature = "deserialize")]
 #[derive(serde::Deserialize)]

@@ -269,8 +269,6 @@ impl super::Adapter {
                 ("GL_ARB_sampler_objects", (3, 3)),
                 ("GL_ARB_instanced_arrays", (3, 3)),
                 ("GL_ARB_sync", (3, 2)),
-                // naga's bitcasts on GLSL 1.40.
-                ("GL_ARB_shader_bit_encoding", (3, 3)),
             ];
             let missing = legacy_extensions
                 .iter()

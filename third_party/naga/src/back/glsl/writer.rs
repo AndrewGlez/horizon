@@ -122,6 +122,22 @@ impl<'a, W: Write> Writer<'a, W> {
         Ok(this)
     }
 
+    /// Whether bitcasts go through `BIT_ENCODING_POLYFILL`: desktop GLSL below 330.
+    fn polyfills_bit_encoding(&self) -> bool {
+        !self.options.version.is_es()
+            && self.options.version < Version::Desktop(330)
+            && self.features.contains(Features::SHADER_BIT_ENCODING)
+    }
+
+    /// `builtin`, or its polyfill where [`Self::polyfills_bit_encoding`].
+    fn bit_encoding_name(&self, builtin: &'static str, polyfill: &'static str) -> &'static str {
+        if self.polyfills_bit_encoding() {
+            polyfill
+        } else {
+            builtin
+        }
+    }
+
     /// Writes the [`Module`](crate::Module) as glsl to the output
     ///
     /// # Notes
@@ -156,6 +172,10 @@ impl<'a, W: Write> Writer<'a, W> {
             writeln!(self.out, "precision highp float;")?;
             writeln!(self.out, "precision highp int;")?;
             writeln!(self.out)?;
+        }
+
+        if self.polyfills_bit_encoding() {
+            writeln!(self.out, "{BIT_ENCODING_POLYFILL}")?;
         }
 
         if self.entry_point.stage == ShaderStage::Compute {
@@ -3788,10 +3808,22 @@ impl<'a, W: Write> Writer<'a, W> {
                             }
 
                             // Cast to/from floats
-                            (Sk::Float, Sk::Sint, _) => write!(self.out, "floatBitsToInt")?,
-                            (Sk::Float, Sk::Uint, _) => write!(self.out, "floatBitsToUint")?,
-                            (Sk::Sint, Sk::Float, _) => write!(self.out, "intBitsToFloat")?,
-                            (Sk::Uint, Sk::Float, _) => write!(self.out, "uintBitsToFloat")?,
+                            (Sk::Float, Sk::Sint, _) => {
+                                let name = self.bit_encoding_name("floatBitsToInt", FLOAT_BITS_TO_INT_FUNCTION);
+                                write!(self.out, "{name}")?
+                            }
+                            (Sk::Float, Sk::Uint, _) => {
+                                let name = self.bit_encoding_name("floatBitsToUint", FLOAT_BITS_TO_UINT_FUNCTION);
+                                write!(self.out, "{name}")?
+                            }
+                            (Sk::Sint, Sk::Float, _) => {
+                                let name = self.bit_encoding_name("intBitsToFloat", INT_BITS_TO_FLOAT_FUNCTION);
+                                write!(self.out, "{name}")?
+                            }
+                            (Sk::Uint, Sk::Float, _) => {
+                                let name = self.bit_encoding_name("uintBitsToFloat", BITS_TO_FLOAT_FUNCTION);
+                                write!(self.out, "{name}")?
+                            }
 
                             // Cast between vector types
                             (_, _, Some(vector)) => {
