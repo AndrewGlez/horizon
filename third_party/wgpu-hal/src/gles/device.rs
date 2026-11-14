@@ -267,8 +267,12 @@ impl super::Device {
             unsafe { gl.object_label(glow::SHADER, name, label) };
         }
 
+        super::trace(format_args!(
+            "compile {naga_stage:?} {label:?}\n----\n{shader}\n----"
+        ));
         unsafe { gl.shader_source(raw, shader) };
         unsafe { gl.compile_shader(raw) };
+        super::trace(format_args!("compiled {naga_stage:?} {label:?}"));
 
         log::debug!("\tCompiled shader {raw:?}");
 
@@ -524,7 +528,9 @@ impl super::Device {
         for &shader in shaders_to_delete.iter() {
             unsafe { gl.attach_shader(program, shader) };
         }
+        super::trace(format_args!("link {label:?}"));
         unsafe { gl.link_program(program) };
+        super::trace(format_args!("linked {label:?}"));
 
         for shader in shaders_to_delete {
             unsafe { gl.delete_shader(shader) };
@@ -535,6 +541,7 @@ impl super::Device {
         let linked_ok = unsafe { gl.get_program_link_status(program) };
         let msg = unsafe { gl.get_program_info_log(program) };
         if !linked_ok {
+            super::trace(format_args!("link failed {label:?}: {msg}"));
             return Err(crate::PipelineError::Linkage(has_stages, msg));
         }
         if !msg.is_empty() {
@@ -566,6 +573,7 @@ impl super::Device {
                 }
             }
         }
+        super::trace(format_args!("bound {label:?}"));
 
         let mut uniforms = ArrayVec::new();
 
@@ -872,6 +880,10 @@ impl crate::Device for super::Device {
         desc: &crate::TextureDescriptor,
     ) -> Result<super::Texture, crate::DeviceError> {
         let gl = &self.shared.context.lock();
+        super::trace(format_args!(
+            "texture {:?} {:?} {:?} mips {}",
+            desc.label, desc.size, desc.format, desc.mip_level_count
+        ));
 
         let render_usage = wgt::TextureUses::COLOR_TARGET
             | wgt::TextureUses::DEPTH_STENCIL_WRITE

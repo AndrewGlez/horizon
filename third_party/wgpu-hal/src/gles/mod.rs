@@ -96,6 +96,26 @@ mod device;
 mod fence;
 mod queue;
 
+/// HD 2000 diagnostic build: each pipeline step appended and flushed to
+/// `%TEMP%/horizon-gl-trace.log` (truncated per run), so a driver crash, which ends the
+/// process without a report, leaves the GL call it died in as the last line.
+#[cfg(all(native, gles_with_std))]
+pub(crate) fn trace(args: fmt::Arguments<'_>) {
+    use std::io::Write as _;
+    static FILE: std::sync::Mutex<Option<std::fs::File>> = std::sync::Mutex::new(None);
+    let mut file = FILE.lock().unwrap_or_else(|e| e.into_inner());
+    if file.is_none() {
+        *file = std::fs::File::create(std::env::temp_dir().join("horizon-gl-trace.log")).ok();
+    }
+    if let Some(f) = file.as_mut() {
+        let _ = f.write_fmt(args);
+        let _ = f.write_all(b"\n");
+        let _ = f.flush();
+    }
+}
+#[cfg(not(all(native, gles_with_std)))]
+pub(crate) fn trace(_: fmt::Arguments<'_>) {}
+
 pub use fence::Fence;
 
 #[cfg(not(any(windows, webgl)))]

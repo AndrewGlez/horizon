@@ -1940,8 +1940,17 @@ impl crate::Queue for super::Queue {
                 }
             }
 
+            // The first submits (resource uploads, the first frames) command by command.
+            static SUBMITS: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
+            let traced = SUBMITS.fetch_add(1, Ordering::Relaxed) < 40;
             for command in cmd_buf.commands.iter() {
+                if traced {
+                    super::trace(format_args!("cmd {:?} {command:?}", cmd_buf.label));
+                }
                 unsafe { self.process(gl, command, &cmd_buf.data_bytes, &cmd_buf.queries) };
+            }
+            if traced {
+                super::trace(format_args!("submitted {:?}", cmd_buf.label));
             }
 
             if cmd_buf.label.is_some()
@@ -1970,6 +1979,10 @@ impl crate::Queue for super::Queue {
         surface: &super::Surface,
         texture: super::Texture,
     ) -> Result<(), crate::SurfaceError> {
+        static PRESENTS: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
+        if PRESENTS.fetch_add(1, Ordering::Relaxed) < 40 {
+            super::trace(format_args!("present"));
+        }
         unsafe { surface.present(texture, &self.shared.context) }
     }
 
