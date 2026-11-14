@@ -3209,10 +3209,16 @@ impl Renderer {
             true,
             Some(flat::ALPHA_ONLY),
         );
+        // Intel's OpenGL 3.1 driver (HD Graphics 2000/3000 on Windows) crashes compiling
+        // `fs_sky`'s per-pixel sunrise fan: on OpenGL the mirror's sky leaves the fan out.
         let sky = pipeline(
             "Sky",
             "vs_sky",
-            "fs_sky",
+            if info.backend == wgpu::Backend::Gl {
+                "fs_sky_base"
+            } else {
+                "fs_sky"
+            },
             &[],
             tri,
             None,
