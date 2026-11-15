@@ -738,6 +738,7 @@ impl Surface {
         // Note the Y-flipping here. GL's presentation is not flipped,
         // but main rendering is. Therefore, we Y-flip the output positions
         // in the shader, and also this blit.
+        let before = unsafe { gl.get_error() };
         unsafe {
             gl.blit_framebuffer(
                 0,
@@ -752,6 +753,13 @@ impl Surface {
                 glow::NEAREST,
             )
         };
+        let after = unsafe { gl.get_error() };
+        if before != glow::NO_ERROR || after != glow::NO_ERROR {
+            super::trace(format_args!(
+                "present {}x{}: GL error 0x{before:04X} before the blit, 0x{after:04X} after",
+                sc.extent.width, sc.extent.height
+            ));
+        }
 
         if self.srgb_capable {
             unsafe { gl.enable(glow::FRAMEBUFFER_SRGB) };

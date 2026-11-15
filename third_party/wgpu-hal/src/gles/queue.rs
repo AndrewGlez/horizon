@@ -1942,7 +1942,7 @@ impl crate::Queue for super::Queue {
 
             // The first submits (resource uploads, the first frames) command by command.
             static SUBMITS: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
-            let traced = SUBMITS.fetch_add(1, Ordering::Relaxed) < 40;
+            let traced = SUBMITS.fetch_add(1, Ordering::Relaxed) < 120;
             for command in cmd_buf.commands.iter() {
                 if traced {
                     // At most 160 characters: a command's Debug holds its upload's bytes
@@ -1960,6 +1960,12 @@ impl crate::Queue for super::Queue {
                     super::trace(format_args!("cmd {:?} {}", cmd_buf.label, text.0));
                 }
                 unsafe { self.process(gl, command, &cmd_buf.data_bytes, &cmd_buf.queries) };
+                if traced {
+                    let error = unsafe { gl.get_error() };
+                    if error != glow::NO_ERROR {
+                        super::trace(format_args!("GL error 0x{error:04X} after that command"));
+                    }
+                }
             }
             if traced {
                 super::trace(format_args!("submitted {:?}", cmd_buf.label));
