@@ -292,7 +292,7 @@ bitflags::bitflags! {
         /// flag framebuffers are set up the way GL 2/3 era games did on it: the swapchain colour
         /// is a texture, framebuffers are configured through GL_FRAMEBUFFER with an explicit read
         /// buffer, depth textures get nearest filtering, clamping and no compare mode, and
-        /// Depth32Float is stored as DEPTH_COMPONENT24.
+        /// Depth32Float is stored as DEPTH24_STENCIL8 and attached at DEPTH_STENCIL_ATTACHMENT.
         const LEGACY_INTEL_FBO = 1 << 2;
     }
 }

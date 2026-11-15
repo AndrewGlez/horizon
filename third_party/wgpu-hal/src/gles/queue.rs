@@ -118,6 +118,65 @@ impl super::Queue {
         }
     }
 
+    /// What the draw framebuffer holds at each attachment point: object type and name, and a
+    /// texture's attached level: size and internal format, read back from the driver.
+    unsafe fn trace_attachments(gl: &glow::Context) {
+        let fb = glow::DRAW_FRAMEBUFFER;
+        for (point, name) in [
+            (glow::COLOR_ATTACHMENT0, "color0"),
+            (glow::DEPTH_ATTACHMENT, "depth"),
+            (glow::STENCIL_ATTACHMENT, "stencil"),
+        ] {
+            let kind = unsafe {
+                gl.get_framebuffer_attachment_parameter_i32(
+                    fb,
+                    point,
+                    glow::FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE,
+                )
+            } as u32;
+            if kind == glow::NONE {
+                super::trace(format_args!("framebuffer {name}: none"));
+                continue;
+            }
+            let object = unsafe {
+                gl.get_framebuffer_attachment_parameter_i32(
+                    fb,
+                    point,
+                    glow::FRAMEBUFFER_ATTACHMENT_OBJECT_NAME,
+                )
+            };
+            if kind != glow::TEXTURE {
+                super::trace(format_args!("framebuffer {name}: object type 0x{kind:04X} #{object}"));
+                continue;
+            }
+            let level = unsafe {
+                gl.get_framebuffer_attachment_parameter_i32(
+                    fb,
+                    point,
+                    glow::FRAMEBUFFER_ATTACHMENT_TEXTURE_LEVEL,
+                )
+            };
+            let previous = unsafe { gl.get_parameter_i32(glow::TEXTURE_BINDING_2D) };
+            let texture = core::num::NonZeroU32::new(object as u32).map(glow::NativeTexture);
+            unsafe { gl.bind_texture(glow::TEXTURE_2D, texture) };
+            let query = |p| unsafe { gl.get_tex_level_parameter_i32(glow::TEXTURE_2D, level, p) };
+            let (w, h, format) = (
+                query(glow::TEXTURE_WIDTH),
+                query(glow::TEXTURE_HEIGHT),
+                query(glow::TEXTURE_INTERNAL_FORMAT),
+            );
+            let (depth_bits, error) = (
+                query(glow::TEXTURE_DEPTH_SIZE),
+                unsafe { gl.get_error() },
+            );
+            let previous = core::num::NonZeroU32::new(previous as u32).map(glow::NativeTexture);
+            unsafe { gl.bind_texture(glow::TEXTURE_2D, previous) };
+            super::trace(format_args!(
+                "framebuffer {name}: texture #{object} level {level} {w}x{h} format 0x{format:04X} depth bits {depth_bits} (query error 0x{error:04X})"
+            ));
+        }
+    }
+
     unsafe fn set_attachment(
         &self,
         gl: &glow::Context,
@@ -1178,6 +1237,15 @@ impl super::Queue {
                 depth_slice,
                 sample_count,
             } => {
+                // Depth32Float is packed depth-stencil under LEGACY_INTEL_FBO: attached whole.
+                let attachment = if attachment == glow::DEPTH_ATTACHMENT
+                    && view.format == wgt::TextureFormat::Depth32Float
+                    && self.fbo_target() == glow::FRAMEBUFFER
+                {
+                    glow::DEPTH_STENCIL_ATTACHMENT
+                } else {
+                    attachment
+                };
                 unsafe {
                     self.set_attachment(
                         gl,
@@ -2031,6 +2099,9 @@ impl crate::Queue for super::Queue {
                         cmd_buf.label,
                         capped(command)
                     ));
+                    if draw != glow::FRAMEBUFFER_COMPLETE {
+                        unsafe { Self::trace_attachments(gl) };
+                    }
                 }
             }
             if traced {
