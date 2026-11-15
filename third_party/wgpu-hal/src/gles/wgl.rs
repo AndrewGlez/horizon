@@ -677,7 +677,8 @@ impl Drop for DeviceContextHandle {
 
 pub struct Swapchain {
     framebuffer: glow::Framebuffer,
-    renderbuffer: glow::Renderbuffer,
+    /// A renderbuffer, or a texture under [`super::Workarounds::LEGACY_INTEL_FBO`].
+    color: super::TextureInner,
 
     /// Extent because the window lies
     extent: wgt::Extent3d,
@@ -820,35 +821,97 @@ impl crate::Surface for Surface {
             crate::SurfaceError::Other("unable to make the OpenGL context current for surface")
         })?;
 
-        let renderbuffer = unsafe { gl.create_renderbuffer() }.map_err(|error| {
-            log::error!("Internal swapchain renderbuffer creation failed: {error}");
-            crate::DeviceError::OutOfMemory
-        })?;
-        unsafe { gl.bind_renderbuffer(glow::RENDERBUFFER, Some(renderbuffer)) };
-        unsafe {
-            gl.renderbuffer_storage(
-                glow::RENDERBUFFER,
-                format_desc.internal,
-                config.extent.width as _,
-                config.extent.height as _,
-            )
+        let legacy = device
+            .shared
+            .workarounds
+            .contains(super::Workarounds::LEGACY_INTEL_FBO);
+        let color = if legacy {
+            let raw = unsafe { gl.create_texture() }.map_err(|error| {
+                log::error!("Internal swapchain texture creation failed: {error}");
+                crate::DeviceError::OutOfMemory
+            })?;
+            unsafe {
+                gl.bind_texture(glow::TEXTURE_2D, Some(raw));
+                for (name, value) in [
+                    (glow::TEXTURE_MIN_FILTER, glow::NEAREST as i32),
+                    (glow::TEXTURE_MAG_FILTER, glow::NEAREST as i32),
+                    (glow::TEXTURE_BASE_LEVEL, 0),
+                    (glow::TEXTURE_MAX_LEVEL, 0),
+                ] {
+                    gl.tex_parameter_i32(glow::TEXTURE_2D, name, value);
+                }
+                gl.tex_image_2d(
+                    glow::TEXTURE_2D,
+                    0,
+                    format_desc.internal as i32,
+                    config.extent.width as i32,
+                    config.extent.height as i32,
+                    0,
+                    format_desc.external,
+                    format_desc.data_type,
+                    glow::PixelUnpackData::Slice(None),
+                );
+                gl.bind_texture(glow::TEXTURE_2D, None);
+            }
+            super::TextureInner::Texture {
+                raw,
+                target: glow::TEXTURE_2D,
+            }
+        } else {
+            let raw = unsafe { gl.create_renderbuffer() }.map_err(|error| {
+                log::error!("Internal swapchain renderbuffer creation failed: {error}");
+                crate::DeviceError::OutOfMemory
+            })?;
+            unsafe {
+                gl.bind_renderbuffer(glow::RENDERBUFFER, Some(raw));
+                gl.renderbuffer_storage(
+                    glow::RENDERBUFFER,
+                    format_desc.internal,
+                    config.extent.width as _,
+                    config.extent.height as _,
+                );
+                gl.bind_renderbuffer(glow::RENDERBUFFER, None);
+            }
+            super::TextureInner::Renderbuffer { raw }
         };
 
         let framebuffer = unsafe { gl.create_framebuffer() }.map_err(|error| {
             log::error!("Internal swapchain framebuffer creation failed: {error}");
             crate::DeviceError::OutOfMemory
         })?;
-        unsafe { gl.bind_framebuffer(glow::READ_FRAMEBUFFER, Some(framebuffer)) };
-        unsafe {
-            gl.framebuffer_renderbuffer(
-                glow::READ_FRAMEBUFFER,
-                glow::COLOR_ATTACHMENT0,
-                glow::RENDERBUFFER,
-                Some(renderbuffer),
-            )
+        // Configured through GL_FRAMEBUFFER with explicit draw and read buffers under the
+        // legacy setup, as on the drivers it is for.
+        let fbo_target = if legacy {
+            glow::FRAMEBUFFER
+        } else {
+            glow::READ_FRAMEBUFFER
         };
-        unsafe { gl.bind_renderbuffer(glow::RENDERBUFFER, None) };
-        unsafe { gl.bind_framebuffer(glow::READ_FRAMEBUFFER, None) };
+        unsafe { gl.bind_framebuffer(fbo_target, Some(framebuffer)) };
+        unsafe {
+            match color {
+                super::TextureInner::Texture { raw, target } => gl.framebuffer_texture_2d(
+                    fbo_target,
+                    glow::COLOR_ATTACHMENT0,
+                    target,
+                    Some(raw),
+                    0,
+                ),
+                super::TextureInner::Renderbuffer { raw } => gl.framebuffer_renderbuffer(
+                    fbo_target,
+                    glow::COLOR_ATTACHMENT0,
+                    glow::RENDERBUFFER,
+                    Some(raw),
+                ),
+                _ => unreachable!(),
+            }
+        };
+        if legacy {
+            unsafe {
+                gl.draw_buffer(glow::COLOR_ATTACHMENT0);
+                gl.read_buffer(glow::COLOR_ATTACHMENT0);
+            }
+        }
+        unsafe { gl.bind_framebuffer(fbo_target, None) };
 
         // Setup presentation mode
         let extra = Wgl::load_with(|name| load_gl_func(name, None));
@@ -875,7 +938,7 @@ impl crate::Surface for Surface {
         }
 
         self.swapchain.write().replace(Swapchain {
-            renderbuffer,
+            color,
             framebuffer,
             extent: config.extent,
             format: config.format,
@@ -890,7 +953,11 @@ impl crate::Surface for Surface {
         let gl = &device.shared.context.lock();
         if let Some(sc) = self.swapchain.write().take() {
             unsafe {
-                gl.delete_renderbuffer(sc.renderbuffer);
+                match sc.color {
+                    super::TextureInner::Texture { raw, .. } => gl.delete_texture(raw),
+                    super::TextureInner::Renderbuffer { raw } => gl.delete_renderbuffer(raw),
+                    _ => unreachable!(),
+                }
                 gl.delete_framebuffer(sc.framebuffer)
             };
         }
@@ -904,9 +971,7 @@ impl crate::Surface for Surface {
         let swapchain = self.swapchain.read();
         let sc = swapchain.as_ref().unwrap();
         let texture = super::Texture {
-            inner: super::TextureInner::Renderbuffer {
-                raw: sc.renderbuffer,
-            },
+            inner: sc.color.clone(),
             drop_guard: None,
             array_layer_count: 1,
             mip_level_count: 1,

@@ -104,6 +104,20 @@ impl super::Queue {
         *current_index_buffer = None;
     }
 
+    /// Where passes configure their framebuffer: GL_FRAMEBUFFER (read and draw) under
+    /// [`super::Workarounds::LEGACY_INTEL_FBO`], else GL_DRAW_FRAMEBUFFER.
+    fn fbo_target(&self) -> u32 {
+        if self
+            .shared
+            .workarounds
+            .contains(super::Workarounds::LEGACY_INTEL_FBO)
+        {
+            glow::FRAMEBUFFER
+        } else {
+            glow::DRAW_FRAMEBUFFER
+        }
+    }
+
     unsafe fn set_attachment(
         &self,
         gl: &glow::Context,
@@ -1115,10 +1129,12 @@ impl super::Queue {
                 }
             }
             C::ResetFramebuffer { is_default } => {
+                // Under LEGACY_INTEL_FBO the pass's framebuffer is bound for reading and drawing.
+                let fbo_target = self.fbo_target();
                 if is_default {
-                    unsafe { gl.bind_framebuffer(glow::DRAW_FRAMEBUFFER, None) };
+                    unsafe { gl.bind_framebuffer(fbo_target, None) };
                 } else {
-                    unsafe { gl.bind_framebuffer(glow::DRAW_FRAMEBUFFER, Some(self.draw_fbo)) };
+                    unsafe { gl.bind_framebuffer(fbo_target, Some(self.draw_fbo)) };
                     // Each aspect detached itself: a depth-only texture left attached makes every
                     // later pass incomplete if a driver keeps it past DEPTH_STENCIL_ATTACHMENT.
                     for attachment in [
@@ -1128,7 +1144,7 @@ impl super::Queue {
                     ] {
                         unsafe {
                             gl.framebuffer_texture_2d(
-                                glow::DRAW_FRAMEBUFFER,
+                                fbo_target,
                                 attachment,
                                 glow::TEXTURE_2D,
                                 None,
@@ -1140,7 +1156,7 @@ impl super::Queue {
                         let target = glow::COLOR_ATTACHMENT0 + i;
                         unsafe {
                             gl.framebuffer_texture_2d(
-                                glow::DRAW_FRAMEBUFFER,
+                                fbo_target,
                                 target,
                                 glow::TEXTURE_2D,
                                 None,
@@ -1165,7 +1181,7 @@ impl super::Queue {
                 unsafe {
                     self.set_attachment(
                         gl,
-                        glow::DRAW_FRAMEBUFFER,
+                        self.fbo_target(),
                         attachment,
                         view,
                         depth_slice,
@@ -1223,6 +1239,16 @@ impl super::Queue {
                     .map(|i| glow::COLOR_ATTACHMENT0 + i)
                     .collect::<ArrayVec<_, { crate::MAX_COLOR_ATTACHMENTS }>>();
                 unsafe { gl.draw_buffers(&indices) };
+                if self.fbo_target() == glow::FRAMEBUFFER
+                    && unsafe { gl.get_parameter_i32(glow::DRAW_FRAMEBUFFER_BINDING) } != 0
+                {
+                    let read = if count == 0 {
+                        glow::NONE
+                    } else {
+                        glow::COLOR_ATTACHMENT0
+                    };
+                    unsafe { gl.read_buffer(read) };
+                }
                 static CHECKS: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
                 if CHECKS.fetch_add(1, Ordering::Relaxed) < 400 {
                     let status = unsafe { gl.check_framebuffer_status(glow::DRAW_FRAMEBUFFER) };
@@ -1965,7 +1991,11 @@ impl crate::Queue for super::Queue {
 
             // The first submits (resource uploads, the first frames) command by command.
             static SUBMITS: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
-            let traced = SUBMITS.fetch_add(1, Ordering::Relaxed) < 120;
+            let submit = SUBMITS.fetch_add(1, Ordering::Relaxed);
+            let traced = submit < 120;
+            // Errors are checked through the first frames after start-up; past that every
+            // glGetError would stall the window's thread for nothing.
+            let checked = submit < 600;
             // At most 160 characters: a command's Debug holds its upload's bytes (the title
             // panorama's 24 MiB took minutes to write).
             struct Capped(alloc::string::String);
@@ -1986,8 +2016,11 @@ impl crate::Queue for super::Queue {
                     super::trace(format_args!("cmd {:?} {}", cmd_buf.label, capped(command)));
                 }
                 unsafe { self.process(gl, command, &cmd_buf.data_bytes, &cmd_buf.queries) };
-                // Every command's error, traced with the command and both framebuffers' status
-                // (the first 300): the first submits alone missed the frames after start-up.
+                if !checked {
+                    continue;
+                }
+                // Each command's error, traced with the command and both framebuffers' status
+                // (the first 300).
                 let error = unsafe { gl.get_error() };
                 static ERRORS: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
                 if error != glow::NO_ERROR && ERRORS.fetch_add(1, Ordering::Relaxed) < 300 {

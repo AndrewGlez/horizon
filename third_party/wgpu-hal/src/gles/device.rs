@@ -952,6 +952,23 @@ impl crate::Device for super::Device {
                         gl.tex_parameter_i32(target, glow::TEXTURE_MAG_FILTER, glow::NEAREST as i32)
                     };
                 }
+                Some(wgt::TextureSampleType::Depth)
+                    if self
+                        .shared
+                        .workarounds
+                        .contains(super::Workarounds::LEGACY_INTEL_FBO) =>
+                {
+                    // A depth render target as GL 2/3 era games made one on this driver.
+                    for (name, value) in [
+                        (glow::TEXTURE_MIN_FILTER, glow::NEAREST),
+                        (glow::TEXTURE_MAG_FILTER, glow::NEAREST),
+                        (glow::TEXTURE_WRAP_S, glow::CLAMP_TO_EDGE),
+                        (glow::TEXTURE_WRAP_T, glow::CLAMP_TO_EDGE),
+                        (glow::TEXTURE_COMPARE_MODE, glow::NONE),
+                    ] {
+                        unsafe { gl.tex_parameter_i32(target, name, value as i32) };
+                    }
+                }
                 _ => {}
             }
 

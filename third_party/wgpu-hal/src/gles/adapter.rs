@@ -365,7 +365,16 @@ impl super::Adapter {
         } else {
             0
         };
-        let max_element_index = unsafe { gl.get_parameter_i32(glow::MAX_ELEMENT_INDEX) } as u32;
+        // MAX_ELEMENT_INDEX arrived with GL 4.3 / ARB_ES3_compatibility: older desktop drivers
+        // answer GL_INVALID_ENUM, which the next error check then blames on another call.
+        let max_element_index = if es_ver.is_none()
+            && full_ver.is_some_and(|v| v < (4, 3))
+            && !extensions.contains("GL_ARB_ES3_compatibility")
+        {
+            u32::MAX
+        } else {
+            unsafe { gl.get_parameter_i32(glow::MAX_ELEMENT_INDEX) as u32 }
+        };
 
         // WORKAROUND: In order to work around an issue with GL on RPI4 and similar, we ignore a
         // zero vertex ssbo count if there are vertex sstos. (more info:
@@ -964,8 +973,8 @@ impl super::Adapter {
         }
 
         if r.contains("intel") && full_ver.is_some_and(|v| v < (3, 2)) {
-            log::warn!("OpenGL 3.1 on Intel: Depth32Float is stored as DEPTH_COMPONENT24");
-            workarounds.set(super::Workarounds::DEPTH32F_AS_DEPTH24, true);
+            log::warn!("OpenGL 3.1 on Intel: legacy framebuffer setup (LEGACY_INTEL_FBO)");
+            workarounds.set(super::Workarounds::LEGACY_INTEL_FBO, true);
         }
 
         let downlevel_defaults = wgt::DownlevelLimits {};

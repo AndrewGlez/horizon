@@ -75,7 +75,7 @@ impl super::AdapterShared {
             Tf::Depth32Float
                 if self
                     .workarounds
-                    .contains(super::Workarounds::DEPTH32F_AS_DEPTH24) =>
+                    .contains(super::Workarounds::LEGACY_INTEL_FBO) =>
             {
                 (glow::DEPTH_COMPONENT24, glow::DEPTH_COMPONENT, glow::FLOAT)
             }

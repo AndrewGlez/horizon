@@ -286,10 +286,14 @@ bitflags::bitflags! {
         const MESA_I915_SRGB_SHADER_CLEAR = 1 << 0;
         /// Buffer map must emulated because it is not supported natively
         const EMULATE_BUFFER_MAP = 1 << 1;
-        /// Depth32Float stored as DEPTH_COMPONENT24: Intel's Sandy Bridge GL 3.1 driver on
-        /// Windows refuses to clear or draw into a framebuffer holding a 32F depth texture
-        /// (GL_INVALID_FRAMEBUFFER_OPERATION) while reporting it complete.
-        const DEPTH32F_AS_DEPTH24 = 1 << 2;
+        /// Intel's Sandy Bridge OpenGL 3.1 driver on Windows: every draw and depth clear into a
+        /// framebuffer holding a depth texture beside the swapchain's colour renderbuffer fails
+        /// with GL_INVALID_FRAMEBUFFER_OPERATION while the status reads complete. Under this
+        /// flag framebuffers are set up the way GL 2/3 era games did on it: the swapchain colour
+        /// is a texture, framebuffers are configured through GL_FRAMEBUFFER with an explicit read
+        /// buffer, depth textures get nearest filtering, clamping and no compare mode, and
+        /// Depth32Float is stored as DEPTH_COMPONENT24.
+        const LEGACY_INTEL_FBO = 1 << 2;
     }
 }
 
