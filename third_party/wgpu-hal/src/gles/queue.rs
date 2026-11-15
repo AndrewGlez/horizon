@@ -1945,7 +1945,19 @@ impl crate::Queue for super::Queue {
             let traced = SUBMITS.fetch_add(1, Ordering::Relaxed) < 40;
             for command in cmd_buf.commands.iter() {
                 if traced {
-                    super::trace(format_args!("cmd {:?} {command:?}", cmd_buf.label));
+                    // At most 160 characters: a command's Debug holds its upload's bytes
+                    // (the title panorama's 24 MiB took minutes to write).
+                    struct Capped(alloc::string::String);
+                    impl core::fmt::Write for Capped {
+                        fn write_str(&mut self, s: &str) -> core::fmt::Result {
+                            let room = 160usize.saturating_sub(self.0.len());
+                            self.0.push_str(&s[..s.floor_char_boundary(room.min(s.len()))]);
+                            if s.len() > room { Err(core::fmt::Error) } else { Ok(()) }
+                        }
+                    }
+                    let mut text = Capped(alloc::string::String::new());
+                    let _ = core::fmt::write(&mut text, format_args!("{command:?}"));
+                    super::trace(format_args!("cmd {:?} {}", cmd_buf.label, text.0));
                 }
                 unsafe { self.process(gl, command, &cmd_buf.data_bytes, &cmd_buf.queries) };
             }
