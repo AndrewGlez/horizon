@@ -1102,6 +1102,13 @@ impl crate::Device for super::Device {
             super::TextureInner::Texture { raw, target }
         };
 
+        let error = unsafe { gl.get_error() };
+        if error != glow::NO_ERROR {
+            super::trace(format_args!(
+                "GL error 0x{error:04X} creating texture {:?} {:?}",
+                desc.label, desc.format
+            ));
+        }
         self.counters.textures.add(1);
 
         Ok(super::Texture {
@@ -1256,6 +1263,10 @@ impl crate::Device for super::Device {
             }
         }
 
+        let error = unsafe { gl.get_error() };
+        if error != glow::NO_ERROR {
+            super::trace(format_args!("GL error 0x{error:04X} creating sampler {desc:?}"));
+        }
         self.counters.samplers.add(1);
 
         Ok(super::Sampler { raw })

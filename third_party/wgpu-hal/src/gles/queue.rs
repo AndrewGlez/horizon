@@ -1215,6 +1215,13 @@ impl super::Queue {
                     .map(|i| glow::COLOR_ATTACHMENT0 + i)
                     .collect::<ArrayVec<_, { crate::MAX_COLOR_ATTACHMENTS }>>();
                 unsafe { gl.draw_buffers(&indices) };
+                static CHECKS: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
+                if CHECKS.fetch_add(1, Ordering::Relaxed) < 400 {
+                    let status = unsafe { gl.check_framebuffer_status(glow::DRAW_FRAMEBUFFER) };
+                    if status != glow::FRAMEBUFFER_COMPLETE {
+                        super::trace(format_args!("framebuffer incomplete: 0x{status:04X}"));
+                    }
+                }
             }
             C::ClearColorF {
                 draw_buffer,
@@ -1923,7 +1930,15 @@ impl crate::Queue for super::Queue {
             // Always reset the state between command_buffers to reflect this assumption. Do
             // this at the beginning of the loop in case something outside of wgpu modified
             // this state prior to commit.
+            let error = unsafe { gl.get_error() };
+            if error != glow::NO_ERROR {
+                super::trace(format_args!("GL error 0x{error:04X} before submit {:?}", cmd_buf.label));
+            }
             unsafe { self.reset_state(gl) };
+            let error = unsafe { gl.get_error() };
+            if error != glow::NO_ERROR {
+                super::trace(format_args!("GL error 0x{error:04X} from reset_state"));
+            }
             if let Some(ref label) = cmd_buf.label {
                 if self
                     .shared
