@@ -963,6 +963,11 @@ impl super::Adapter {
             workarounds.set(super::Workarounds::MESA_I915_SRGB_SHADER_CLEAR, true);
         }
 
+        if r.contains("intel") && full_ver.is_some_and(|v| v < (3, 2)) {
+            log::warn!("OpenGL 3.1 on Intel: Depth32Float is stored as DEPTH_COMPONENT24");
+            workarounds.set(super::Workarounds::DEPTH32F_AS_DEPTH24, true);
+        }
+
         let downlevel_defaults = wgt::DownlevelLimits {};
         let max_samples = unsafe { gl.get_parameter_i32(glow::MAX_SAMPLES) };
 

@@ -72,6 +72,13 @@ impl super::AdapterShared {
                 glow::DEPTH_COMPONENT,
                 glow::UNSIGNED_SHORT,
             ),
+            Tf::Depth32Float
+                if self
+                    .workarounds
+                    .contains(super::Workarounds::DEPTH32F_AS_DEPTH24) =>
+            {
+                (glow::DEPTH_COMPONENT24, glow::DEPTH_COMPONENT, glow::FLOAT)
+            }
             Tf::Depth32Float => (glow::DEPTH_COMPONENT32F, glow::DEPTH_COMPONENT, glow::FLOAT),
             Tf::Depth32FloatStencil8 => (
                 glow::DEPTH32F_STENCIL8,

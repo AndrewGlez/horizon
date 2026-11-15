@@ -1966,28 +1966,38 @@ impl crate::Queue for super::Queue {
             // The first submits (resource uploads, the first frames) command by command.
             static SUBMITS: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
             let traced = SUBMITS.fetch_add(1, Ordering::Relaxed) < 120;
+            // At most 160 characters: a command's Debug holds its upload's bytes (the title
+            // panorama's 24 MiB took minutes to write).
+            struct Capped(alloc::string::String);
+            impl core::fmt::Write for Capped {
+                fn write_str(&mut self, s: &str) -> core::fmt::Result {
+                    let room = 160usize.saturating_sub(self.0.len());
+                    self.0.push_str(&s[..s.floor_char_boundary(room.min(s.len()))]);
+                    if s.len() > room { Err(core::fmt::Error) } else { Ok(()) }
+                }
+            }
+            let capped = |command: &C| {
+                let mut text = Capped(alloc::string::String::new());
+                let _ = core::fmt::write(&mut text, format_args!("{command:?}"));
+                text.0
+            };
             for command in cmd_buf.commands.iter() {
                 if traced {
-                    // At most 160 characters: a command's Debug holds its upload's bytes
-                    // (the title panorama's 24 MiB took minutes to write).
-                    struct Capped(alloc::string::String);
-                    impl core::fmt::Write for Capped {
-                        fn write_str(&mut self, s: &str) -> core::fmt::Result {
-                            let room = 160usize.saturating_sub(self.0.len());
-                            self.0.push_str(&s[..s.floor_char_boundary(room.min(s.len()))]);
-                            if s.len() > room { Err(core::fmt::Error) } else { Ok(()) }
-                        }
-                    }
-                    let mut text = Capped(alloc::string::String::new());
-                    let _ = core::fmt::write(&mut text, format_args!("{command:?}"));
-                    super::trace(format_args!("cmd {:?} {}", cmd_buf.label, text.0));
+                    super::trace(format_args!("cmd {:?} {}", cmd_buf.label, capped(command)));
                 }
                 unsafe { self.process(gl, command, &cmd_buf.data_bytes, &cmd_buf.queries) };
-                if traced {
-                    let error = unsafe { gl.get_error() };
-                    if error != glow::NO_ERROR {
-                        super::trace(format_args!("GL error 0x{error:04X} after that command"));
-                    }
+                // Every command's error, traced with the command and both framebuffers' status
+                // (the first 300): the first submits alone missed the frames after start-up.
+                let error = unsafe { gl.get_error() };
+                static ERRORS: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
+                if error != glow::NO_ERROR && ERRORS.fetch_add(1, Ordering::Relaxed) < 300 {
+                    let draw = unsafe { gl.check_framebuffer_status(glow::DRAW_FRAMEBUFFER) };
+                    let read = unsafe { gl.check_framebuffer_status(glow::READ_FRAMEBUFFER) };
+                    super::trace(format_args!(
+                        "GL error 0x{error:04X} (draw fb 0x{draw:04X}, read fb 0x{read:04X}) after {:?} {}",
+                        cmd_buf.label,
+                        capped(command)
+                    ));
                 }
             }
             if traced {
