@@ -77,8 +77,8 @@ impl super::AdapterShared {
                     .workarounds
                     .contains(super::Workarounds::LEGACY_INTEL_FBO) =>
             {
-                // Packed depth-stencil: a DEPTH_COMPONENT24 texture attached alone reads
-                // FRAMEBUFFER_INCOMPLETE_ATTACHMENT on Intel's Sandy Bridge GL 3.1 driver.
+                // Packed depth-stencil, attached at the depth and stencil points one by one
+                // (`ResetFramebuffer` / `BindAttachment` under LEGACY_INTEL_FBO).
                 (
                     glow::DEPTH24_STENCIL8,
                     glow::DEPTH_STENCIL,

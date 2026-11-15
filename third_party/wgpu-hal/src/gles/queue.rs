@@ -1196,11 +1196,20 @@ impl super::Queue {
                     unsafe { gl.bind_framebuffer(fbo_target, Some(self.draw_fbo)) };
                     // Each aspect detached itself: a depth-only texture left attached makes every
                     // later pass incomplete if a driver keeps it past DEPTH_STENCIL_ATTACHMENT.
-                    for attachment in [
-                        glow::DEPTH_STENCIL_ATTACHMENT,
-                        glow::DEPTH_ATTACHMENT,
-                        glow::STENCIL_ATTACHMENT,
-                    ] {
+                    // Intel's Sandy Bridge GL 3.1 driver mishandles DEPTH_STENCIL_ATTACHMENT: after
+                    // it the stencil point was a texture attachment naming no texture, and every
+                    // pass with depth read FRAMEBUFFER_INCOMPLETE_ATTACHMENT.
+                    let legacy = fbo_target == glow::FRAMEBUFFER;
+                    let points: &[u32] = if legacy {
+                        &[glow::DEPTH_ATTACHMENT, glow::STENCIL_ATTACHMENT]
+                    } else {
+                        &[
+                            glow::DEPTH_STENCIL_ATTACHMENT,
+                            glow::DEPTH_ATTACHMENT,
+                            glow::STENCIL_ATTACHMENT,
+                        ]
+                    };
+                    for &attachment in points {
                         unsafe {
                             gl.framebuffer_texture_2d(
                                 fbo_target,
@@ -1237,25 +1246,28 @@ impl super::Queue {
                 depth_slice,
                 sample_count,
             } => {
-                // Depth32Float is packed depth-stencil under LEGACY_INTEL_FBO: attached whole.
-                let attachment = if attachment == glow::DEPTH_ATTACHMENT
+                // Depth32Float is packed depth-stencil under LEGACY_INTEL_FBO, attached at the
+                // depth and the stencil points one by one (EXT_packed_depth_stencil's way).
+                let points: &[u32] = if attachment == glow::DEPTH_ATTACHMENT
                     && view.format == wgt::TextureFormat::Depth32Float
                     && self.fbo_target() == glow::FRAMEBUFFER
                 {
-                    glow::DEPTH_STENCIL_ATTACHMENT
+                    &[glow::DEPTH_ATTACHMENT, glow::STENCIL_ATTACHMENT]
                 } else {
-                    attachment
+                    &[attachment]
                 };
-                unsafe {
-                    self.set_attachment(
-                        gl,
-                        self.fbo_target(),
-                        attachment,
-                        view,
-                        depth_slice,
-                        sample_count,
-                    )
-                };
+                for &attachment in points {
+                    unsafe {
+                        self.set_attachment(
+                            gl,
+                            self.fbo_target(),
+                            attachment,
+                            view,
+                            depth_slice,
+                            sample_count,
+                        )
+                    };
+                }
             }
             C::ResolveAttachment {
                 attachment,
