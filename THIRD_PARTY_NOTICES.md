@@ -63,7 +63,8 @@ are in that folder (`LICENSE.MIT`, `LICENSE.APACHE`).
 
 Its GLSL backend writes `#version 140` without a profile (profiles arrived in GLSL 150), and
 below GLSL 330 writes bitcasts as exact arithmetic (`BIT_ENCODING_POLYFILL`): Intel's Sandy
-Bridge driver lists `GL_ARB_shader_bit_encoding` but its GLSL 1.40 compiler refuses it.
+Bridge driver lists `GL_ARB_shader_bit_encoding` but its GLSL 1.40 compiler refuses it. Below
+GLSL 330 it also writes array constants without `const`, which that compiler refuses on arrays.
 
 The GLSL frontend also resets the common type for each comma-separated declarator so one
 variable's array specifier does not change later variables.

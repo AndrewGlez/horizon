@@ -1499,8 +1499,14 @@ impl<'a, W: Write> Writer<'a, W> {
 
     /// Helper method used to write global constants
     fn write_global_constant(&mut self, handle: Handle<crate::Constant>) -> BackendResult {
-        write!(self.out, "const ")?;
         let constant = &self.module.constants[handle];
+        // Intel's Sandy Bridge GLSL 1.40 compiler refuses `const` arrays ("cannot declare
+        // arrays of this qualifier"): below 330 they are plain initialized globals.
+        let array = matches!(self.module.types[constant.ty].inner, TypeInner::Array { .. });
+        if !(array && !self.options.version.is_es() && self.options.version < Version::Desktop(330))
+        {
+            write!(self.out, "const ")?;
+        }
         self.write_type(constant.ty)?;
         let name = &self.names[&NameKey::Constant(handle)];
         write!(self.out, " {name}")?;
