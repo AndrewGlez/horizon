@@ -872,6 +872,10 @@ impl super::Adapter {
                 if max_varying_components == 0 {
                     // default value for max_inter_stage_shader_variables
                     15
+                } else if full_ver.is_some() {
+                    // Desktop GL 3.0+ guarantees 64 components; Intel's Sandy Bridge Windows
+                    // driver reports 41, below what the spec lets it offer.
+                    max_varying_components.max(64) / 4
                 } else {
                     max_varying_components / 4
                 }
