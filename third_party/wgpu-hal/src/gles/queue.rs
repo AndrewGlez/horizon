@@ -1119,15 +1119,23 @@ impl super::Queue {
                     unsafe { gl.bind_framebuffer(glow::DRAW_FRAMEBUFFER, None) };
                 } else {
                     unsafe { gl.bind_framebuffer(glow::DRAW_FRAMEBUFFER, Some(self.draw_fbo)) };
-                    unsafe {
-                        gl.framebuffer_texture_2d(
-                            glow::DRAW_FRAMEBUFFER,
-                            glow::DEPTH_STENCIL_ATTACHMENT,
-                            glow::TEXTURE_2D,
-                            None,
-                            0,
-                        )
-                    };
+                    // Each aspect detached itself: a depth-only texture left attached makes every
+                    // later pass incomplete if a driver keeps it past DEPTH_STENCIL_ATTACHMENT.
+                    for attachment in [
+                        glow::DEPTH_STENCIL_ATTACHMENT,
+                        glow::DEPTH_ATTACHMENT,
+                        glow::STENCIL_ATTACHMENT,
+                    ] {
+                        unsafe {
+                            gl.framebuffer_texture_2d(
+                                glow::DRAW_FRAMEBUFFER,
+                                attachment,
+                                glow::TEXTURE_2D,
+                                None,
+                                0,
+                            )
+                        };
+                    }
                     for i in 0..self.shared.limits.max_color_attachments {
                         let target = glow::COLOR_ATTACHMENT0 + i;
                         unsafe {

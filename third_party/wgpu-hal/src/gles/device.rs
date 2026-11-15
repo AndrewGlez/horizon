@@ -1086,6 +1086,25 @@ impl crate::Device for super::Device {
                 };
             }
 
+            // Without immutable storage a texture claims 1000 levels until told otherwise, so one
+            // with fewer is mipmap-incomplete, which old drivers (Intel's Sandy Bridge GL 3.1) can refuse
+            // as a framebuffer attachment (every draw: GL_INVALID_FRAMEBUFFER_OPERATION).
+            if !self
+                .shared
+                .private_caps
+                .contains(PrivateCapabilities::TEXTURE_STORAGE)
+                && desc.sample_count <= 1
+            {
+                unsafe { gl.tex_parameter_i32(target, glow::TEXTURE_BASE_LEVEL, 0) };
+                unsafe {
+                    gl.tex_parameter_i32(
+                        target,
+                        glow::TEXTURE_MAX_LEVEL,
+                        desc.mip_level_count as i32 - 1,
+                    )
+                };
+            }
+
             #[cfg(native)]
             if let Some(label) = desc.label {
                 if self
